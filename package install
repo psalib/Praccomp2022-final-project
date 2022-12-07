@@ -1,0 +1,6 @@
+# if you do not alreayd have instaled the necessary packages, use code below to do so 
+
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("phyloseq")
