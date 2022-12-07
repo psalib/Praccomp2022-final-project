@@ -1,0 +1,228 @@
+---
+title: "thamesmock12s"
+output: html_document
+date: "2022-12-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Call in necessary packages 
+```{r}
+library(dada2)
+library(phyloseq); packageVersion("phyloseq")
+library(Biostrings); packageVersion("Biostrings")
+library(ggplot2); packageVersion("ggplot2")
+library(tidyverse) ; packageVersion("tidyverse") # 1.3.1
+library(insect)
+library(vegan) ; packageVersion("vegan") # 2.5.4
+```
+
+Setting your path 
+```{r}
+# first go to GitHub URL https://github.com/psalib/Praccomp2022-final-project.git and download a clone the repo, stick it on your desktop (or set your own working wirectory and stick it there)
+path <- ("~/Desktop/Praccomp2022-final-project-main/data")
+list.files(path)
+```
+
+sorting read files into separate forward and reverse objects 
+```{r}
+# Forward and reverse fastq filenames have format: SAMPLENAME_R1_001.fastq and SAMPLENAME_R2_001.fastq
+fnFs <- sort(list.files(path, pattern="_R1_001.fastq", full.names = TRUE))
+fnRs <- sort(list.files(path, pattern="_R2_001.fastq", full.names = TRUE))
+# Extract sample names, assuming filenames have format: SAMPLENAME_XXX.fastq
+sample.names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
+# To check if sample.names function works to your intent and that samples names are still unique 
+list(sample.names)
+```
+
+
+```{r}
+# in order to determine where to truncate your sequences, try to follow the read quality profile until reads start to consistently dip below Qscore of 30 
+plotQualityProfile(fnFs[1:4])  # forward reads
+plotQualityProfile(fnRs[1:4])  # reverse reads 
+```
+
+Create subdirectory in your set path of samples that pass through the filter to be stored 
+```{r}
+# Place filtered files in filtered/ subdirectory, this creaqtes vectors of sample names to be easily used down the line 
+filtFs <- file.path(path, "filtered12s", paste0(sample.names, "_F_filt.fastq.gz"))
+filtRs <- file.path(path, "filtered12s", paste0(sample.names, "_R_filt.fastq.gz"))
+names(filtFs) <- sample.names
+names(filtRs) <- sample.names
+```
+
+filter and trimming
+```{r}
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, 
+              truncLen=c(200,220), #based on the quality profiles 
+              maxN=0, # default setting, no ambiguous base calls
+              maxEE=c(2,2), # no more than 2 expected erroneous base calls
+              truncQ=2, # trims all bases after it comes across the first quality score of 2
+              rm.phix=TRUE, #removes bacteriophage genome used for control 
+              compress=TRUE, multithread=TRUE) # On Windows set multithread=FALSE
+head(out) # gives us a table with reads in and reads out to help determine if you need to relax/tighten trimming paramters 
+```
+
+generating an error model 
+```{r}
+errF <- learnErrors(filtFs, multithread=TRUE)
+errR <- learnErrors(filtRs, multithread=TRUE)
+plotErrors(errF, nominalQ=TRUE)
+# red line is expected based on quality score
+# black line is error estimate 
+# black dots are the observed errors
+```
+
+visualize how our trimming and filtering changed out read quality 
+```{r}
+plotQualityProfile(filtFs[1:4])  # forward filtered reads
+plotQualityProfile(filtRs[1:4]) # reverse filtered reads 
+```
+inferring Amplicon Sequence Variants 
+```{r}
+dadaFs <- dada(filtFs, err=errF, pool = "pseudo" ,multithread=TRUE)
+dadaRs <- dada(filtRs, err=errR, pool = "pseudo", multithread=TRUE)
+# pooling helps resolve low abundance variants 
+```
+
+```{r}
+dadaFs[[1]] #tells us the number of sequence variants were inferred 
+```
+
+merginf forward and reverse reads 
+```{r}
+mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE)
+# Inspect the merger data.frame from the first sample
+head(mergers[[1]])
+```
+```{r}
+seqtab <- makeSequenceTable(mergers)
+dim(seqtab)
+```
+
+```{r}
+# Inspect distribution of sequence lengths
+table(nchar(getSequences(seqtab)))
+```
+```{r}
+seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=FALSE, verbose=TRUE)
+dim(seqtab.nochim)
+```
+
+
+```{r}
+sum(seqtab.nochim)/sum(seqtab)
+```
+
+
+
+```{r}
+getN <- function(x) sum(getUniques(x))
+track <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers, getN), rowSums(seqtab.nochim))
+# If processing a single sample, remove the sapply calls: e.g. replace sapply(dadaFs, getN) with getN(dadaFs)
+colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
+rownames(track) <- sample.names
+head(track)
+```
+
+
+
+```{r} 
+asv_seqs <- colnames(seqtab.nochim)
+asv_headers <- vector(dim(seqtab.nochim)[2], mode="character")
+
+for (i in 1:dim(seqtab.nochim)[2]) {
+  asv_headers[i] <- paste(">ASV", i, sep="_")
+}
+
+  # making and writing out a fasta of our final ASV seqs:
+asv_fasta <- c(rbind(asv_headers, asv_seqs))
+write(asv_fasta, "ASVs.fa")
+
+  # count table:
+asv_tab <- t(seqtab.nochim)
+row.names(asv_tab) <- sub(">", "", asv_headers)
+write.table(asv_tab, "ASVs_counts.tsv", sep="\t", quote=F, col.names=NA)
+
+```
+
+
+
+
+# taxonomy
+## dada2 tax resolution method 
+```{r}
+taxa <- assignTaxonomy(seqtab.nochim,"~/Desktop/Praccomp2022-final-project-main/data/references.12s.miya.dada.taxonomy.v251.fasta", multithread=TRUE)
+taxa <- addSpecies(taxa, "~/Desktop/Praccomp2022-final-project-main/data/references.12s.miya.dada.species.v251.fasta")
+```
+
+```{r}
+taxa.print <- taxa # Removing sequence rownames for display only
+rownames(taxa.print) <- NULL
+head(taxa.print)
+
+rownames(asv_tab) <- NULL
+
+asv_taxa <- cbind(taxa.print, asv_tab)
+```
+
+
+```{r}
+## read in the example seqtab.nochim ASV table
+data(seqtab.nochim)
+## get sequences from table column names
+y <- char2dna(colnames(seqtab.nochim))
+## name the sequences sequentially
+names(y) <- paste0("ASV", seq_along(y))
+## optionally remove column names that can flood the console when printed
+colnames(seqtab.nochim) <- NULL 
+```
+
+
+## analysis 
+
+```{r}
+samples.out <- rownames(seqtab.nochim)
+subject <- sapply(strsplit(samples.out, "D"), `[`, 1)
+gender <- substr(subject,1,1)
+subject <- substr(subject,2,999)
+day <- as.integer(sapply(strsplit(samples.out, "D"), `[`, 2))
+df <- data.frame(Subject=subject)
+rownames(df) <- samples.out
+```
+
+```{r}
+ps <- phyloseq(otu_table(seqtab.nochim, taxa_are_rows=FALSE), 
+               tax_table(taxa))
+
+dna <- Biostrings::DNAStringSet(taxa_names(ps))
+names(dna) <- taxa_names(ps)
+ps <- merge_phyloseq(ps, dna)
+taxa_names(ps) <- paste0("ASV", seq(ntaxa(ps)))
+ps
+```
+```{r}
+theme_set(theme_bw())
+```
+
+```{r}
+# Transform data to proportions as appropriate for Bray-Curtis distances
+ps.prop <- transform_sample_counts(ps, function(otu) otu/sum(otu))
+ord.nmds.bray <- ordinate(ps.prop, method="NMDS", distance="bray")
+```
+```{r}
+plot_ordination(ps.prop, ord.nmds.bray, color="Subject", title="Bray NMDS")
+```
+```{r}
+plot_richness(ps, measures = "shannon")
+```
+abundance bar graph 
+```{r}
+data("ps")
+gp.ch = subset_taxa(ps, Phylum == "Actinopterygii")
+plot_bar(gp.ch, fill="Genus")
+```
+
+
