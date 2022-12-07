@@ -4,3 +4,13 @@ if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 
 BiocManager::install("phyloseq")
+BiocManager::install("dada2", version = "3.11")
+BiocManager::install("Biostrings")
+
+
+
+devtools::install_github("shaunpwilkinson/insect")
+
+install.packages("vegan")
+install.packages("tidyverse")
+install.packages("vggplot2")
