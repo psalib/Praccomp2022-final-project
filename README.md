@@ -20,7 +20,7 @@ Here are links to the packages i use in the project
 7) vegan - https://rdrr.io/cran/vegan/
 
 
-RPub html file of script and outputhttp://rpubs.com/psalib/981434
+RPub html file of script and output http://rpubs.com/psalib/981434
 
 # contents of main branch 
 
