@@ -1,6 +1,6 @@
 # Here you'll find the various components that make up my final project for prac comp 2022 
 
-Before we get into my work, first we should acknowledge the shoulders of the giants of which it was built. Here are two example workflows / tutroials that i could not have completed this without. 
+Before we get into my work, first we should acknowledge the shoulders of the giants on which it was built. Here are two example workflows / tutroials that i could not have completed this without. 
 
 1) https://astrobiomike.github.io/amplicon/dada2_workflow_ex#chimera-identification
 2) https://benjjneb.github.io/dada2/tutorial.html
